@@ -1,0 +1,6 @@
+{
+  "name": "Creator AI Landing Page",
+  "description": "A dark-themed landing page for an AI content creation tool, featuring responsive design, features, testimonials, and FAQ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
