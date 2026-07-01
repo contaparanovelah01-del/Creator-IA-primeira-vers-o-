@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { collection, addDoc, serverTimestamp, query, where, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, getDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { SupportChat } from "../components/SupportChat";
 import {
@@ -25,12 +25,16 @@ import {
   Globe,
   ShieldAlert,
   Edit2,
+  Lightbulb,
 } from "lucide-react";
 import { auth, logout, db } from "../lib/firebase";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { useTheme } from "../contexts/ThemeContext";
 import jsPDF from "jspdf";
+import Cropper from 'react-easy-crop';
+import 'react-easy-crop/react-easy-crop.css';
+import { getCroppedImg } from '../lib/cropImage';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -358,9 +362,47 @@ function CreateTab({ selectedType, setSelectedType, setActiveTab, currentLanguag
   const [scriptType, setScriptType] = useState("Curto");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<{id: string, text: string, isFavorite: boolean} | null>(null);
+  const [userPlan, setUserPlan] = useState('free');
+  const [generationsUsedToday, setGenerationsUsedToday] = useState(0);
+  const [showTipsModal, setShowTipsModal] = useState(false);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setUserPlan(data.plan || 'free');
+        
+        const now = new Date();
+        const resetTimeToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 9, 0, 0));
+        const currentPeriodStart = now < resetTimeToday 
+          ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 9, 0, 0))
+          : resetTimeToday;
+          
+        const lastGenDateStr = data.lastGenerationDate;
+        const lastGenDate = lastGenDateStr ? new Date(lastGenDateStr) : new Date(0);
+        
+        if (lastGenDate < currentPeriodStart) {
+          setGenerationsUsedToday(0);
+        } else {
+          setGenerationsUsedToday(data.generationsUsedToday || 0);
+        }
+      }
+    });
+    
+    return () => unsubscribe();
+  }, []);
 
   const handleGenerate = async () => {
     if (!topic.trim()) return;
+
+    const isAdmin = auth.currentUser?.email?.toLowerCase() === 'victormizael09@gmail.com';
+    if (userPlan === 'free' && generationsUsedToday >= 5 && !isAdmin) {
+      alert("Você atingiu o limite de 5 gerações do plano grátis hoje. Assine o premium para ter gerações ilimitadas ou aguarde até as 06:00 de amanhã.");
+      return;
+    }
     
     setIsGenerating(true);
     setGeneratedContent(null);
@@ -413,6 +455,32 @@ function CreateTab({ selectedType, setSelectedType, setActiveTab, currentLanguag
         isFavorite: false,
         createdAt: serverTimestamp()
       });
+
+      const now = new Date();
+      const resetTimeToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 9, 0, 0));
+      const currentPeriodStart = now < resetTimeToday 
+        ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 9, 0, 0))
+        : resetTimeToday;
+        
+      if (auth.currentUser) {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const lastGenDateStr = userData.lastGenerationDate;
+          const lastGenDate = lastGenDateStr ? new Date(lastGenDateStr) : new Date(0);
+          
+          let newGenerationsUsed = 1;
+          if (lastGenDate >= currentPeriodStart) {
+            newGenerationsUsed = (userData.generationsUsedToday || 0) + 1;
+          }
+          
+          await updateDoc(userRef, {
+            generationsUsedToday: newGenerationsUsed,
+            lastGenerationDate: now.toISOString()
+          });
+        }
+      }
 
       setGeneratedContent({ id: docRef.id, text: data.text, isFavorite: false });
     } catch (error: any) {
@@ -642,6 +710,23 @@ function CreateTab({ selectedType, setSelectedType, setActiveTab, currentLanguag
       </div>
 
       <div className="sticky bottom-20 mt-6 pt-4 pb-2 bg-zinc-50 dark:bg-[#09090b]">
+        <div className="flex items-center justify-between mb-3 px-2">
+            {userPlan === 'free' && auth.currentUser?.email?.toLowerCase() !== 'victormizael09@gmail.com' ? (
+                <span className="text-xs text-zinc-500 font-medium">
+                    {t.generationsRemainingToday.replace('{n}', `${Math.max(0, 5 - generationsUsedToday)}/5`)}
+                </span>
+            ) : (
+                <span className="text-xs text-emerald-500 font-medium">{t.unlimitedGensPremium}</span>
+            )}
+            
+            <button 
+                onClick={() => setShowTipsModal(true)} 
+                className="text-xs text-emerald-500 hover:text-emerald-600 font-medium flex items-center gap-1"
+            >
+                <Lightbulb size={14} /> {t.tipsTitle}
+            </button>
+        </div>
+
         <button 
           onClick={handleGenerate}
           disabled={!topic.trim() || isGenerating}
@@ -661,8 +746,43 @@ function CreateTab({ selectedType, setSelectedType, setActiveTab, currentLanguag
       </div>
 
       <AnimatePresence>
+        {showTipsModal && (
+          <motion.div
+            key="tips-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-black/50 flex flex-col items-center justify-center p-4"
+          >
+            <div className="max-w-md w-full bg-white dark:bg-[#18181b] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                  <Lightbulb className="text-emerald-500" /> {t.tipsTitle}
+                </h2>
+                <button onClick={() => setShowTipsModal(false)} className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 text-sm text-zinc-600 dark:text-zinc-400">
+                <p>💡 <strong>{t.tip1Title}</strong> {t.tip1Desc}</p>
+                <p>💡 <strong>{t.tip2Title}</strong> {t.tip2Desc}</p>
+                <p>💡 <strong>{t.tip3Title}</strong> {t.tip3Desc}</p>
+                {userPlan === 'free' && auth.currentUser?.email?.toLowerCase() !== 'victormizael09@gmail.com' && (
+                  <div className="mt-6 p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                    <p className="text-emerald-600 dark:text-emerald-400 font-medium mb-2">{t.upgradeLimitTitle}</p>
+                    <p className="text-xs mb-3">{t.upgradeLimitDesc}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {generatedContent && (
           <motion.div
+            key="generated-content-modal"
             initial={{ opacity: 0, y: "100%" }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}
@@ -991,53 +1111,60 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showCropper, setShowCropper] = useState(false);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [localPhoto, setLocalPhoto] = useState<string | null | undefined>(user?.photoURL);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().photoURL) {
+        setLocalPhoto(docSnap.data().photoURL);
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const onCropComplete = (croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  };
+
+  const showCroppedImage = async () => {
+    if (!imageSrc || !croppedAreaPixels || !user) return;
+    try {
+      setIsUploading(true);
+      const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels);
+      if (croppedImage) {
+        await updateDoc(doc(db, 'users', user.uid), { photoURL: croppedImage });
+        setLocalPhoto(croppedImage);
+        setShowCropper(false);
+        setImageSrc(null);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao salvar a foto. A imagem pode ser muito grande.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-
-    setIsUploading(true);
+    
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
-      img.onload = async () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 256;
-        const MAX_HEIGHT = 256;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          
-          try {
-            await updateProfile(user, { photoURL: dataUrl });
-            await updateDoc(doc(db, 'users', user.uid), { photoURL: dataUrl });
-          } catch (error) {
-            console.error("Error updating profile photo:", error);
-          } finally {
-            setIsUploading(false);
-          }
-        }
-      };
-      img.src = event.target?.result as string;
+        setImageSrc(event.target?.result as string);
+        setShowCropper(true);
     };
     reader.readAsDataURL(file);
+    
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+    }
   };
 
   const handleLogout = async () => {
@@ -1072,9 +1199,9 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
             className="w-full bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 flex items-center gap-4 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-[#1f1f22]"
           >
             <div className="w-16 h-16 rounded-2xl bg-emerald-500 flex items-center justify-center text-zinc-950 shrink-0">
-              {user?.photoURL ? (
+              {(localPhoto || user?.photoURL) ? (
                 <img
-                  src={user.photoURL}
+                  src={localPhoto || user?.photoURL || ''}
                   alt="Profile"
                   className="w-full h-full rounded-2xl object-cover"
                 />
@@ -1190,7 +1317,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
 
         <div>
           <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 pl-2">
-            Idioma
+            {t.appLang}
           </h2>
           <div className="bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-2 transition-colors duration-300">
             <div className="flex items-center justify-between p-3">
@@ -1200,10 +1327,10 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
                 </div>
                 <div>
                   <div className="text-zinc-900 dark:text-white font-medium text-sm">
-                    Idioma do App
+                    {t.appLang}
                   </div>
                   <div className="text-zinc-500 text-xs">
-                    Selecione o idioma da interface
+                    {t.selectAppLang}
                   </div>
                 </div>
               </div>
@@ -1228,7 +1355,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
 
         <div>
           <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 pl-2">
-            Ajuda & Suporte
+            {t.helpAndSupport}
           </h2>
           <div className="bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-2 transition-colors duration-300 flex flex-col gap-2">
             <button onClick={() => setShowTerms(true)} className="flex items-center justify-between p-3 w-full text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-2xl transition-colors">
@@ -1238,7 +1365,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
                 </div>
                 <div>
                   <div className="text-zinc-900 dark:text-white font-medium text-sm">
-                    Termos de Serviço
+                    {t.termsOfServiceTitle}
                   </div>
                 </div>
               </div>
@@ -1251,7 +1378,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
                 </div>
                 <div>
                   <div className="text-zinc-900 dark:text-white font-medium text-sm">
-                    Política de Privacidade
+                    {t.privacyPolicyTitle}
                   </div>
                 </div>
               </div>
@@ -1261,7 +1388,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
         
         <div>
           <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 pl-2">
-            Sobre
+            {t.aboutMe}
           </h2>
           <div className="bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-2 transition-colors duration-300 flex flex-col gap-2">
             <button onClick={() => setShowAbout(true)} className="flex items-center justify-between p-3 w-full text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-2xl transition-colors">
@@ -1271,7 +1398,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
                 </div>
                 <div>
                   <div className="text-zinc-900 dark:text-white font-medium text-sm">
-                    Sobre Mim (Victor Mizael)
+                    {t.aboutMeName}
                   </div>
                 </div>
               </div>
@@ -1288,8 +1415,48 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
       </div>
 
       <AnimatePresence>
+        {showCropper && imageSrc && (
+          <motion.div
+            key="cropper-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-black flex flex-col"
+          >
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950 pt-safe-top z-10 relative">
+              <h2 className="text-lg font-bold text-white">Cortar Foto</h2>
+              <button onClick={() => { setShowCropper(false); setImageSrc(null); }} className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="relative flex-1 bg-black">
+              <Cropper
+                image={imageSrc}
+                crop={crop}
+                zoom={zoom}
+                aspect={1}
+                cropShape="round"
+                showGrid={false}
+                onCropChange={setCrop}
+                onCropComplete={onCropComplete}
+                onZoomChange={setZoom}
+              />
+            </div>
+            <div className="p-6 bg-zinc-950 border-t border-zinc-800 pb-safe-bottom">
+              <button 
+                onClick={showCroppedImage}
+                disabled={isUploading}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold py-4 rounded-xl flex items-center justify-center gap-2"
+              >
+                {isUploading ? <div className="w-5 h-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin"></div> : "Cortar e Salvar"}
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {showProfileModal && (
           <motion.div
+            key="profile-modal"
             initial={{ opacity: 0, y: "100%" }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}
@@ -1315,9 +1482,9 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
                 disabled={isUploading}
                 className="w-32 h-32 rounded-full bg-emerald-500 flex items-center justify-center text-zinc-950 relative overflow-hidden group hover:opacity-90 transition-opacity mb-4"
               >
-                {user?.photoURL ? (
+                {(localPhoto || user?.photoURL) ? (
                   <img
-                    src={user.photoURL}
+                    src={localPhoto || user?.photoURL || ''}
                     alt="Profile"
                     className="w-full h-full object-cover"
                   />
@@ -1346,6 +1513,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
 
         {showTerms && (
           <motion.div
+            key="terms-modal"
             initial={{ opacity: 0, y: "100%" }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}
@@ -1353,25 +1521,25 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
             className="fixed inset-0 z-[100] bg-white dark:bg-[#09090b] flex flex-col"
           >
             <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 pt-safe-top">
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Termos de Serviço</h2>
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{t.termsOfServiceTitle}</h2>
               <button onClick={() => setShowTerms(false)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
                 <X size={20} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="prose dark:prose-invert prose-zinc max-w-none text-sm space-y-4">
-                <h3 className="font-bold text-lg">1. Aceitação dos Termos</h3>
-                <p>Ao acessar e utilizar o aplicativo Creator AI, você concorda em cumprir e estar vinculado a estes Termos de Serviço. Se você não concordar com qualquer parte destes termos, não deverá utilizar nossa plataforma.</p>
-                <h3 className="font-bold text-lg">2. Uso da Plataforma</h3>
-                <p>O Creator AI fornece ferramentas baseadas em inteligência artificial para auxiliar criadores de conteúdo na geração de textos, roteiros e legendas. O uso das ferramentas deve ser feito de maneira ética e em conformidade com as leis aplicáveis.</p>
-                <h3 className="font-bold text-lg">3. Contas de Usuário</h3>
-                <p>Para acessar certas funcionalidades, você deve criar uma conta. Você é responsável por manter a confidencialidade de suas credenciais de login e por todas as atividades que ocorrem sob sua conta.</p>
-                <h3 className="font-bold text-lg">4. Geração de Conteúdo e Propriedade</h3>
-                <p>O conteúdo gerado através do Creator AI utilizando inteligência artificial pertence ao usuário. No entanto, o Creator AI não garante a originalidade, precisão ou adequação do conteúdo gerado para fins específicos, cabendo ao usuário revisar e adaptar o conteúdo antes de sua publicação.</p>
-                <h3 className="font-bold text-lg">5. Limitação de Responsabilidade</h3>
-                <p>Em nenhuma circunstância o Creator AI ou seus fundadores serão responsabilizados por quaisquer danos diretos, indiretos, incidentais ou consequentes resultantes do uso ou da incapacidade de usar o serviço.</p>
-                <h3 className="font-bold text-lg">6. Modificações dos Termos</h3>
-                <p>Reservamo-nos o direito de modificar estes termos a qualquer momento. As alterações entrarão em vigor imediatamente após sua publicação na plataforma. O uso contínuo do serviço constitui aceitação dos novos termos.</p>
+                <h3 className="font-bold text-lg">{t.termsOfServiceH1}</h3>
+                <p>{t.termsOfServiceP1}</p>
+                <h3 className="font-bold text-lg">{t.termsOfServiceH2}</h3>
+                <p>{t.termsOfServiceP2}</p>
+                <h3 className="font-bold text-lg">{t.termsOfServiceH3}</h3>
+                <p>{t.termsOfServiceP3}</p>
+                <h3 className="font-bold text-lg">{t.termsOfServiceH4}</h3>
+                <p>{t.termsOfServiceP4}</p>
+                <h3 className="font-bold text-lg">{t.termsOfServiceH5}</h3>
+                <p>{t.termsOfServiceP5}</p>
+                <h3 className="font-bold text-lg">{t.termsOfServiceH6}</h3>
+                <p>{t.termsOfServiceP6}</p>
               </div>
             </div>
           </motion.div>
@@ -1379,6 +1547,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
 
         {showPrivacy && (
           <motion.div
+            key="privacy-modal"
             initial={{ opacity: 0, y: "100%" }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}
@@ -1386,25 +1555,21 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
             className="fixed inset-0 z-[100] bg-white dark:bg-[#09090b] flex flex-col"
           >
             <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 pt-safe-top">
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Política de Privacidade</h2>
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{t.privacyPolicyTitle}</h2>
               <button onClick={() => setShowPrivacy(false)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
                 <X size={20} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="prose dark:prose-invert prose-zinc max-w-none text-sm space-y-4">
-                <h3 className="font-bold text-lg">1. Informações que Coletamos</h3>
-                <p>Coletamos informações que você nos fornece diretamente, como nome, endereço de e-mail, foto de perfil (quando aplicável) e os dados inseridos nas solicitações de geração de conteúdo para fins de prestação do serviço.</p>
-                <h3 className="font-bold text-lg">2. Como Usamos suas Informações</h3>
-                <p>Utilizamos suas informações para criar e gerenciar sua conta, fornecer e personalizar os serviços do Creator AI, processar suas solicitações de geração de conteúdo e enviar comunicações importantes sobre atualizações ou suporte.</p>
-                <h3 className="font-bold text-lg">3. Compartilhamento de Dados</h3>
-                <p>Não vendemos, alugamos ou compartilhamos suas informações pessoais com terceiros para fins de marketing. Seus dados podem ser processados através de provedores de infraestrutura seguros (como Firebase e OpenAI/Google AI) estritamente para a operação da plataforma.</p>
-                <h3 className="font-bold text-lg">4. Armazenamento e Segurança</h3>
-                <p>Implementamos medidas de segurança padrão da indústria para proteger suas informações contra acesso não autorizado, alteração, divulgação ou destruição. Seus históricos e conteúdos gerados são armazenados de forma segura e atrelados unicamente à sua conta.</p>
-                <h3 className="font-bold text-lg">5. Seus Direitos</h3>
-                <p>Você tem o direito de acessar, corrigir ou excluir suas informações pessoais a qualquer momento. Você pode gerenciar seus dados diretamente pelas configurações da conta ou contatando o suporte.</p>
-                <h3 className="font-bold text-lg">6. Uso de Cookies e Tecnologias Semelhantes</h3>
-                <p>Utilizamos armazenamento local e cookies essenciais para manter sua sessão ativa, gerenciar preferências (como idioma e tema) e melhorar a experiência de navegação.</p>
+                <h3 className="font-bold text-lg">{t.privacyPolicyH1}</h3>
+                <p>{t.privacyPolicyP1}</p>
+                <h3 className="font-bold text-lg">{t.privacyPolicyH2}</h3>
+                <p>{t.privacyPolicyP2}</p>
+                <h3 className="font-bold text-lg">{t.privacyPolicyH3}</h3>
+                <p>{t.privacyPolicyP3}</p>
+                <h3 className="font-bold text-lg">{t.privacyPolicyH4}</h3>
+                <p>{t.privacyPolicyP4}</p>
               </div>
             </div>
           </motion.div>
@@ -1412,6 +1577,7 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
 
         {showAbout && (
           <motion.div
+            key="about-modal"
             initial={{ opacity: 0, y: "100%" }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}
@@ -1419,29 +1585,18 @@ function SettingsTab({ onViewChange, currentLanguage }: any) {
             className="fixed inset-0 z-[100] bg-white dark:bg-[#09090b] flex flex-col"
           >
             <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 pt-safe-top">
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Sobre Mim</h2>
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{t.aboutMe}</h2>
               <button onClick={() => setShowAbout(false)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
                 <X size={20} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="prose dark:prose-invert prose-zinc max-w-none text-sm space-y-4">
-                <h3 className="font-bold text-xl text-emerald-600 dark:text-emerald-400 mb-2">Olá! Sou Victor,</h3>
-                <p>
-                  Fundador desta plataforma e apaixonado por tecnologia, inovação e empreendedorismo digital.
-                </p>
-                <p>
-                  Minha visão é desenvolver soluções que simplifiquem o dia a dia de criadores de conteúdo, oferecendo ferramentas práticas, acessíveis e eficientes para apoiar o planejamento, a produção e o crescimento nas principais plataformas digitais.
-                </p>
-                <p>
-                  Acredito que a tecnologia deve eliminar barreiras e permitir que os criadores concentrem seu tempo no que realmente importa: criar conteúdo de qualidade e expandir sua audiência. Por isso, cada ferramenta disponibilizada aqui é desenvolvida com foco em simplicidade, desempenho e experiência do usuário.
-                </p>
-                <p>
-                  Este projeto representa o primeiro passo de uma missão maior: construir uma empresa de tecnologia dedicada ao desenvolvimento de produtos que impulsionem a Creator Economy e gerem impacto positivo para milhões de criadores ao redor do mundo.
-                </p>
-                <p className="font-medium pt-4">
-                  Obrigado por visitar a plataforma e fazer parte desta jornada de inovação e crescimento.
-                </p>
+                <h3 className="font-bold text-xl text-emerald-600 dark:text-emerald-400 mb-2">{t.aboutMeContent1}</h3>
+                <p>{t.aboutMeContent2}</p>
+                <p>{t.aboutMeContent3}</p>
+                <p>{t.aboutMeContent4}</p>
+                <p className="font-medium pt-4">{t.aboutMeContent5}</p>
               </div>
             </div>
           </motion.div>
@@ -1522,6 +1677,7 @@ function ContentViewerModal({ content, onClose, t }: any) {
   return (
       <AnimatePresence>
           <motion.div
+            key="content-viewer-modal"
             initial={{ opacity: 0, y: "100%" }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}

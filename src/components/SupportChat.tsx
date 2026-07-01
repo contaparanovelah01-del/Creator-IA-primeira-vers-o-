@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, writeBatch } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { MessageCircle, X, Send, Check, CheckCheck } from "lucide-react";
+import { translations } from "../lib/i18n";
 
 interface SupportChatProps {
   userId?: string;
@@ -11,6 +12,9 @@ interface SupportChatProps {
 }
 
 export function SupportChat({ userId, isAdminView }: SupportChatProps) {
+  const preferredLanguage = localStorage.getItem("preferredLanguage") || "Português";
+  const t = translations[preferredLanguage as keyof typeof translations] || translations["Português"];
+
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -134,6 +138,7 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
           <AnimatePresence>
             {isOpen && (
               <motion.div
+                key="support-chat-admin"
                 initial={{ opacity: 0, y: 20, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -142,7 +147,7 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
               >
                 <div className="bg-emerald-500 p-4 flex items-center justify-between">
                   <div>
-                    <h3 className="font-bold text-zinc-950">Suporte</h3>
+                    <h3 className="font-bold text-zinc-950">{t.supportTitle}</h3>
                   </div>
                   <button onClick={() => setIsOpen(false)} className="text-zinc-950 hover:bg-emerald-600 p-1 rounded-full transition-colors">
                     <X size={20} />
@@ -152,7 +157,7 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-zinc-50 dark:bg-[#09090b]">
                   {messages.length === 0 ? (
                     <div className="text-center text-zinc-500 text-sm mt-10">
-                      Nenhuma mensagem ainda.
+                      {t.noContentYet}
                     </div>
                   ) : (
                     messages.map((msg, index) => {
@@ -185,7 +190,7 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
                       type="text"
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      placeholder="Digite uma mensagem..."
+                      placeholder={t.chatPlaceholder}
                       className="flex-1 bg-zinc-100 dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-full px-4 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
                     />
                     <button
@@ -205,6 +210,7 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
             <AnimatePresence>
               {isOpen && (
                 <motion.div
+                  key="support-chat-user"
                   initial={{ opacity: 0, y: 20, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -212,8 +218,8 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
                 >
                   <div className="bg-emerald-500 p-4 pt-safe-top flex items-center justify-between">
                     <div>
-                      <h3 className="font-bold text-zinc-950">Suporte</h3>
-                      <p className="text-xs text-zinc-800">Victor Mizael</p>
+                      <h3 className="font-bold text-zinc-950">{t.supportTitle}</h3>
+                      <p className="text-xs text-zinc-800">{t.supportSub}</p>
                     </div>
                     <button onClick={() => setIsOpen(false)} className="text-zinc-950 hover:bg-emerald-600 p-1 rounded-full transition-colors">
                       <X size={20} />
@@ -223,7 +229,7 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
                   <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-zinc-50 dark:bg-[#09090b]">
                     {messages.length === 0 ? (
                       <div className="text-center text-zinc-500 text-sm mt-10">
-                        Nenhuma mensagem ainda.
+                        {t.noContentYet}
                       </div>
                     ) : (
                       messages.map((msg, index) => {
@@ -256,7 +262,7 @@ export function SupportChat({ userId, isAdminView }: SupportChatProps) {
                         type="text"
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Digite uma mensagem..."
+                        placeholder={t.chatPlaceholder}
                         className="flex-1 bg-zinc-100 dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-full px-4 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
                       />
                       <button

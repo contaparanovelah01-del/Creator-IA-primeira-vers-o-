@@ -231,6 +231,7 @@ export default function App() {
       <AnimatePresence>
         {showLangModal && (
           <motion.div
+            key="lang-modal"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
