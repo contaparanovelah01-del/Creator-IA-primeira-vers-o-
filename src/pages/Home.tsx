@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Sparkles,
   Zap,
@@ -13,8 +13,10 @@ import {
   ArrowDown,
   Menu,
   Globe,
+  X,
+  Check
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import { translations } from "../lib/i18n";
 
@@ -35,6 +37,12 @@ function Header({ onMenuClick, onViewChange, currentLanguage, onLanguageChange }
         </div>
 
         <div className="hidden md:flex items-center gap-6">
+          <a
+            href="#planos"
+            className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:text-white font-medium transition-colors"
+          >
+            Planos
+          </a>
           <button
             onClick={() => onViewChange("login")}
             className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:text-white font-medium transition-colors"
@@ -583,6 +591,104 @@ function FAQSection({ currentLanguage }: { currentLanguage: string }) {
   );
 }
 
+function PricingSection({ currentLanguage, onViewChange }: any) {
+  const t = translations[currentLanguage as keyof typeof translations] || translations["Português"];
+  
+  const plans = [
+    {
+      name: "Semanal",
+      price: "R$ 9,90",
+      period: "/semana",
+      popular: false,
+      features: [
+        "Gerações ilimitadas",
+        "Acesso a todos os tons",
+        "Exportação em massa (PDF)",
+        "Suporte prioritário"
+      ]
+    },
+    {
+      name: "Mensal",
+      price: "R$ 29,90",
+      period: "/mês",
+      popular: true,
+      features: [
+        "Tudo do plano Semanal",
+        "Economia de 25% no mês",
+        "Acesso antecipado a novos recursos",
+        "Sem limites de uso"
+      ]
+    },
+    {
+      name: "Anual",
+      price: "R$ 249,90",
+      period: "/ano",
+      popular: false,
+      features: [
+        "Tudo do plano Mensal",
+        "Maior economia (30% off)",
+        "Suporte VIP 24/7",
+        "Selo de Criador PRO"
+      ]
+    }
+  ];
+
+  return (
+    <section id="planos" className="py-20 px-4 max-w-6xl mx-auto border-t border-zinc-200 dark:border-zinc-800/50">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-100px" }}
+        transition={{ duration: 0.5 }}
+        className="text-center mb-16"
+      >
+        <h2 className="text-3xl md:text-4xl font-bold mb-4">Escolha seu plano Premium</h2>
+        <p className="text-zinc-500 dark:text-zinc-400 text-lg max-w-2xl mx-auto">
+          Desbloqueie todo o poder da inteligência artificial e escale sua criação de conteúdo sem limites.
+        </p>
+      </motion.div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+        {plans.map((plan, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-50px" }}
+            transition={{ duration: 0.5, delay: i * 0.1 }}
+            className={`relative bg-white dark:bg-[#121214] border ${plan.popular ? 'border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.15)]' : 'border-zinc-200 dark:border-zinc-800'} rounded-2xl p-8 flex flex-col`}
+          >
+            {plan.popular && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-emerald-500 text-zinc-950 px-3 py-1 rounded-full text-sm font-bold tracking-wide">
+                MAIS POPULAR
+              </div>
+            )}
+            <h3 className="text-xl font-bold mb-2 text-zinc-900 dark:text-white">{plan.name}</h3>
+            <div className="mb-6">
+              <span className="text-4xl font-extrabold text-zinc-900 dark:text-white">{plan.price}</span>
+              <span className="text-zinc-500 dark:text-zinc-400 font-medium">{plan.period}</span>
+            </div>
+            <ul className="space-y-4 mb-8 flex-1">
+              {plan.features.map((feat, j) => (
+                <li key={j} className="flex items-start gap-3">
+                  <Check className="w-5 h-5 text-emerald-500 shrink-0" />
+                  <span className="text-zinc-600 dark:text-zinc-300 text-left">{feat}</span>
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={() => onViewChange("signup")}
+              className={`w-full py-4 rounded-xl font-bold transition-all ${plan.popular ? 'bg-emerald-500 hover:bg-emerald-600 text-zinc-950' : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white'}`}
+            >
+              Assinar {plan.name}
+            </button>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CTASection({ onViewChange, currentLanguage }: any) {
   const t = translations[currentLanguage as keyof typeof translations] || translations["Português"];
   return (
@@ -704,6 +810,7 @@ export function Home({ onViewChange, onMenuClick }: any) {
         <HowItWorksSection currentLanguage={currentLanguage} />
         <TestimonialsSection currentLanguage={currentLanguage} />
         <FAQSection currentLanguage={currentLanguage} />
+        <PricingSection currentLanguage={currentLanguage} onViewChange={onViewChange} />
         <CTASection onViewChange={onViewChange} currentLanguage={currentLanguage} />
       </main>
       <Footer onViewChange={onViewChange} currentLanguage={currentLanguage} />

@@ -35,6 +35,8 @@ import jsPDF from "jspdf";
 import Cropper from 'react-easy-crop';
 import 'react-easy-crop/react-easy-crop.css';
 import { getCroppedImg } from '../lib/cropImage';
+import AnalyticsLayout from '../components/analytics/AnalyticsLayout';
+import { BarChart2 } from 'lucide-react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -345,10 +347,10 @@ function CreateTab({ selectedType, setSelectedType, setActiveTab, currentLanguag
   ];
 
   const scriptTypes = [
-    "Curto",
-    "Médio",
-    "Longo",
-    "Narrado"
+    t.scriptType1,
+    t.scriptType2,
+    t.scriptType3,
+    t.scriptType4
   ];
 
   const [platform, setPlatform] = useState("TikTok");
@@ -359,7 +361,11 @@ function CreateTab({ selectedType, setSelectedType, setActiveTab, currentLanguag
   });
   const [topic, setTopic] = useState("");
   const [language, setLanguage] = useState(() => localStorage.getItem("preferredLanguage") || "Português");
-  const [scriptType, setScriptType] = useState("Curto");
+  const [scriptType, setScriptType] = useState(() => {
+    const currentLang = localStorage.getItem("preferredLanguage") || "Português";
+    const t = translations[currentLang as keyof typeof translations] || translations["Português"];
+    return t.scriptType1;
+  });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<{id: string, text: string, isFavorite: boolean} | null>(null);
   const [userPlan, setUserPlan] = useState('free');
@@ -621,7 +627,7 @@ function CreateTab({ selectedType, setSelectedType, setActiveTab, currentLanguag
         {selectedType === t.genType2 && (
           <div>
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 block">
-              Tipo de Roteiro
+              {t.scriptTypeLabel}
             </label>
             <div className="flex flex-wrap gap-2">
               {scriptTypes.map((type) => (
@@ -1752,12 +1758,20 @@ import { AdminTab } from "../components/AdminTab";
 export function Dashboard({ onViewChange }: any) {
   const [activeTab, setActiveTab] = useState("home");
   const [viewingContent, setViewingContent] = useState<any>(null);
+  const [showPromo, setShowPromo] = useState(false);
   const [selectedType, setSelectedType] = useState(() => {
     const currentLang = localStorage.getItem("preferredLanguage") || "Português";
     const t = translations[currentLang as keyof typeof translations] || translations["Português"];
     return t.genType1;
   });
   
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowPromo(true);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   const currentLanguage = localStorage.getItem("preferredLanguage") || "Português";
   const t = translations[currentLanguage as keyof typeof translations] || translations["Português"];
 
@@ -1766,6 +1780,7 @@ export function Dashboard({ onViewChange }: any) {
   const baseTabs = [
     { id: "home", label: t.dashHome, icon: LayoutDashboard },
     { id: "create", label: t.dashCreate, icon: Sparkles },
+    { id: "analytics", label: "Análises", icon: BarChart2 },
     { id: "history", label: t.dashHistory, icon: Clock },
     { id: "favorites", label: t.dashFav, icon: Heart },
     { id: "settings", label: t.dashConfig, icon: Settings },
@@ -1803,6 +1818,7 @@ export function Dashboard({ onViewChange }: any) {
               currentLanguage={currentLanguage}
             />
           )}
+          {activeTab === "analytics" && <AnalyticsLayout key="analytics" />}
           {activeTab === "history" && <HistoryTab key="history" currentLanguage={currentLanguage} setViewingContent={setViewingContent} />}
           {activeTab === "favorites" && <FavoritesTab key="favorites" currentLanguage={currentLanguage} setViewingContent={setViewingContent} />}
           {activeTab === "settings" && (
@@ -1815,14 +1831,14 @@ export function Dashboard({ onViewChange }: any) {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 w-full bg-white/90 dark:bg-[#121214]/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800/50 pb-safe pt-2 px-2 z-50 transition-colors duration-300">
-        <div className="flex justify-between max-w-lg mx-auto">
+      <div className="fixed bottom-0 left-0 w-full bg-white/90 dark:bg-[#121214]/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800/50 pb-safe pt-2 px-1 md:px-2 z-50 transition-colors duration-300">
+        <div className="flex justify-between max-w-2xl mx-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
 
             return (
-              <div key={tab.id} className="relative flex flex-col items-center justify-center w-16 h-14">
+              <div key={tab.id} className="relative flex flex-col items-center justify-center flex-1 h-14">
                 {tab.id === 'settings' && !isAdmin && (
                   <div className="absolute bottom-full mb-4 z-50">
                     <SupportChat isAdminView={false} />
@@ -1872,6 +1888,53 @@ export function Dashboard({ onViewChange }: any) {
           t={t} 
         />
       )}
+
+      <AnimatePresence>
+        {showPromo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 md:p-8 max-w-lg w-full text-center shadow-2xl"
+            >
+              <button
+                onClick={() => setShowPromo(false)}
+                className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+              
+              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Sparkles size={32} />
+              </div>
+              
+              <h2 className="text-2xl md:text-3xl font-extrabold text-zinc-900 dark:text-white mb-4">
+                Desbloqueie seu Potencial Criativo
+              </h2>
+              <p className="text-zinc-500 dark:text-zinc-400 text-lg mb-8">
+                Escale sua produção de conteúdo sem limites. Tenha acesso exclusivo a todas as ferramentas avançadas, exportação profissional e suporte prioritário para viralizar nas redes sociais.
+              </p>
+              
+              <button
+                onClick={() => {
+                  setShowPromo(false);
+                  // Aqui depois vai o redirect para os planos / pagamento
+                }}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold text-lg rounded-xl py-4 flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+              >
+                <Zap size={22} fill="currentColor" />
+                Quero ser Premium
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

@@ -10,6 +10,34 @@ async function startServer() {
   app.use(express.json());
 
   // API routes
+  app.post("/api/youtube", async (req, res) => {
+    try {
+      const { endpoint, params } = req.body;
+      if (!process.env.YOUTUBE) {
+        return res.status(500).json({ error: "YOUTUBE api key is not configured" });
+      }
+
+      const queryParams = new URLSearchParams({
+        ...params,
+        key: process.env.YOUTUBE
+      });
+
+      const url = `https://www.googleapis.com/youtube/v3/${endpoint}?${queryParams.toString()}`;
+      
+      const ytRes = await fetch(url);
+      const data = await ytRes.json();
+      
+      if (!ytRes.ok) {
+         return res.status(ytRes.status).json(data);
+      }
+      
+      res.json(data);
+    } catch (error: any) {
+      console.error("Error calling YouTube API:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch from YouTube" });
+    }
+  });
+
   app.post("/api/generate", async (req, res) => {
     try {
       const { prompt } = req.body;
